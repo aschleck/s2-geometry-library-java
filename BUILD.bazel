@@ -2,6 +2,23 @@ package(default_visibility = ["//visibility:public"])
 
 load("@com_google_j2cl//build_defs:rules.bzl", "j2cl_library")
 
+java_library(
+    name = "s2",
+    srcs = glob([
+        "library/src/**/*.java",
+    ], exclude=glob([
+        "library/src/super-j2cl/**/*.java",
+    ])),
+    deps = [
+        "@com_google_j2cl//:jsinterop-annotations",
+        "@maven//:com_google_code_findbugs_jsr305",
+        "@maven//:com_google_errorprone_error_prone_annotations",
+        "@maven//:com_google_guava_guava",
+        "@maven//:com_google_j2objc_j2objc_annotations",
+        "@maven//:org_checkerframework_checker_qual",
+    ],
+)
+
 j2cl_library(
     name = "s2-j2cl",
     srcs = glob([
@@ -20,4 +37,10 @@ j2cl_library(
         "@com_google_j2objc_annotations-j2cl",
         "@org_checkerframework_checker_qual-j2cl",
     ],
+)
+
+# TODO(april): how do we expose this to the main module without duplication?
+alias(
+    name = "com_google_guava-j2cl",
+    actual = "@com_google_guava-j2cl//:com_google_guava-j2cl",
 )

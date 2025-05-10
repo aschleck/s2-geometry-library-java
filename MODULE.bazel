@@ -1,0 +1,71 @@
+module(
+    name = "com_google_geometry_s2",
+    version = "0.0.0",
+    compatibility_level = 0,
+)
+
+bazel_dep(name = "com_google_elemental2")
+bazel_dep(name = "com_google_j2cl")
+bazel_dep(name = "rules_jvm_external", version = "6.7")
+
+maven = use_extension("@rules_jvm_external//:extensions.bzl", "maven")
+maven.install(
+    artifacts = [
+        "com.google.code.findbugs:jsr305:3.0.2",
+        "com.google.errorprone:error_prone_annotations:2.38.0",
+        "com.google.guava:guava:33.4.8-jre",
+        "com.google.j2objc:j2objc-annotations:3.0.0",
+        "org.checkerframework:checker-qual:3.49.3",
+    ],
+)
+use_repo(maven, "maven")
+
+j2cl_maven_import_external = use_repo_rule("@com_google_j2cl//build_defs:rules.bzl", "j2cl_maven_import_external")
+j2cl_maven_import_external(
+    name = "com_google_code_findbugs_jsr305-j2cl",
+    annotation_only = True,
+    artifact = "com.google.code.findbugs:jsr305:3.0.2",
+    server_urls = ["https://repo1.maven.org/maven2/"],
+)
+j2cl_maven_import_external(
+    name = "com_google_errorprone_error_prone_annotations-j2cl",
+    annotation_only = True,
+    artifact = "com.google.errorprone:error_prone_annotations:2.38.0",
+    artifact_sha256 = "6661d5335090a5fc61dd869d2095bc6c1e2156e3aa47a6e4ababdf64c99a7889",
+    server_urls = ["https://repo1.maven.org/maven2/"],
+)
+j2cl_maven_import_external(
+    name = "com_google_guava-j2cl",
+    artifact = "com.google.guava:guava-gwt:33.4.8-jre",
+    artifact_sha256 = "ec7864353821b18ace638e4ea5cc7902ca7aaec66447a0a2d2f35fa2734a1c6f",
+    server_urls = ["https://repo1.maven.org/maven2/"],
+    deps = [
+        "@com_google_elemental2//:elemental2-promise-j2cl",
+        "@com_google_errorprone_error_prone_annotations-j2cl",
+        "@com_google_j2cl//:jsinterop-annotations-j2cl",
+        "@com_google_j2objc_annotations-j2cl",
+        "@org_jspecify_jspecify-j2cl",
+    ],
+)
+j2cl_maven_import_external(
+    name = "com_google_j2objc_annotations-j2cl",
+    annotation_only = True,
+    artifact = "com.google.j2objc:j2objc-annotations:3.0.0",
+    artifact_sha256 = "88241573467ddca44ffd4d74aa04c2bbfd11bf7c17e0c342c94c9de7a70a7c64",
+    server_urls = ["https://repo1.maven.org/maven2/"],
+)
+j2cl_maven_import_external(
+    name = "org_checkerframework_checker_qual-j2cl",
+    annotation_only = True,
+    artifact = "org.checkerframework:checker-qual:3.49.3",
+    artifact_sha256 = "367edbf2fe9f606c1fdb5a8ba6e1c9c27625993e1ff954e3868de70bcc6416b7",
+    server_urls = ["https://repo1.maven.org/maven2/"],
+)
+j2cl_maven_import_external(
+    name = "org_jspecify_jspecify-j2cl",
+    annotation_only = True,
+    artifact = "org.jspecify:jspecify:1.0.0",
+    artifact_sha256 = "1fad6e6be7557781e4d33729d49ae1cdc8fdda6fe477bb0cc68ce351eafdfbab",
+    server_urls = ["https://repo1.maven.org/maven2/"],
+)
+
