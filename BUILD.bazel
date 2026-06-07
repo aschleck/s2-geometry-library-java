@@ -1,6 +1,7 @@
 package(default_visibility = ["//visibility:public"])
 
-load("@com_google_j2cl//build_defs:rules.bzl", "j2cl_library")
+load("@j2cl//build_defs:rules.bzl", "j2cl_library")
+load("@rules_java//java:java_library.bzl", "java_library")
 
 java_library(
     name = "s2",
@@ -10,7 +11,7 @@ java_library(
         "library/src/super-j2cl/**/*.java",
     ])),
     deps = [
-        "@com_google_j2cl//:jsinterop-annotations",
+        "@j2cl//:jsinterop-annotations",
         "@maven//:com_google_code_findbugs_jsr305",
         "@maven//:com_google_errorprone_error_prone_annotations",
         "@maven//:com_google_guava_guava",
@@ -30,11 +31,11 @@ j2cl_library(
     ]),
     deps = [
         "@com_google_code_findbugs_jsr305-j2cl",
-        "@com_google_elemental2//:elemental2-promise-j2cl",
         "@com_google_errorprone_error_prone_annotations-j2cl",
         "@com_google_guava-j2cl",
-        "@com_google_j2cl//:jsinterop-annotations-j2cl",
         "@com_google_j2objc_annotations-j2cl",
+        "@elemental2//:elemental2-promise-j2cl",
+        "@j2cl//:jsinterop-annotations-j2cl",
         "@org_checkerframework_checker_qual-j2cl",
     ],
 )
