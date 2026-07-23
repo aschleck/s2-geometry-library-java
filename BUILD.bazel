@@ -16,7 +16,9 @@ java_library(
         "@maven//:com_google_errorprone_error_prone_annotations",
         "@maven//:com_google_guava_guava",
         "@maven//:com_google_j2objc_j2objc_annotations",
+        "@maven//:it_unimi_dsi_fastutil",
         "@maven//:org_checkerframework_checker_qual",
+        "@maven//:org_jspecify_jspecify",
     ],
 )
 
@@ -27,6 +29,7 @@ j2cl_library(
         "library/src/super-j2cl/**/*.java",
         "library/src/super-j2cl/**/*.js",
     ], exclude=[
+        "library/src/com/google/common/geometry/BufferUtils.java",
         "library/src/com/google/common/geometry/Platform.java",
     ]),
     deps = [
@@ -37,6 +40,8 @@ j2cl_library(
         "@elemental2//:elemental2-promise-j2cl",
         "@j2cl//:jsinterop-annotations-j2cl",
         "@org_checkerframework_checker_qual-j2cl",
+        "@org_jspecify_jspecify-j2cl",
+        ":fastutil-j2cl",
     ],
 )
 
@@ -45,3 +50,11 @@ alias(
     name = "com_google_guava-j2cl",
     actual = "@com_google_guava-j2cl//:com_google_guava-j2cl",
 )
+
+# A minimal, J2CL-compatible reimplementation of the fastutil classes used by S2. Upstream fastutil
+# ships only a javac compiled jar that is incompatible with j2cl.
+j2cl_library(
+    name = "fastutil-j2cl",
+    srcs = glob(["library/j2cl-fastutil/**/*.java"]),
+)
+
