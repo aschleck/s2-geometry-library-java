@@ -38,7 +38,7 @@ import java.util.ArrayList;
  * <p>Here is a simple example showing how to simplify a polyline into a sequence of edges that stay
  * within "maxError" of the original edges:
  *
- * <pre>{@code
+ * {@snippet :
  * List<S2Point> v = { ... };
  * S2PolylineSimplifier simplifier = new S2PolylineSimplifier();
  * simplifier.init(v.get(0));
@@ -51,7 +51,7 @@ import java.util.ArrayList;
  * }
  * outputEdge(simplifer.src(), v.back());
  *
- * }</pre>
+ * }
  *
  * <p>Note that the points targeted by targetDisc do not need to be the same as the candidate
  * endpoints passed to extend(). So for example, you could target the original vertices of a
@@ -71,6 +71,7 @@ public class S2PolylineSimplifier {
 
   /** First vector of an orthonormal frame for mapping vectors to angles. */
   private S2Point xDir;
+
   /** Second vector of an orthonormal frame for mapping vectors to angles. */
   private S2Point yDir;
 
@@ -201,20 +202,19 @@ public class S2PolylineSimplifier {
    * <pre>Then this method ensures that {@code
    *   (1) distance(AB, P) > r, and
    *   (2) if dotProd(AB, AP) > 0, then sign(ABP) > 0 iff discOnLeft is true.
-   * }</pre>
+   * }
    *
    * <p>The second condition says that "discOnLeft" has an effect if and only if P is not behind the
    * source vertex A with respect to the direction AB.
    *
    * <p>If your input is a polyline, you can compute "discOnLeft" as follows. Let the polyline be
-   * ABCDE and assume that it already avoids a set of points X_i. Suppose that you have aleady added
-   * ABC to the simplifier, and now want to extend the edge chain to D. First find the X_i that are
-   * near the edge CD, then discard the ones such that {@code AX_i <= AC} or {@code AX_i >= AD}
+   * ABCDE and assume that it already avoids a set of points X_i. Suppose that you have already
+   * added ABC to the simplifier, and now want to extend the edge chain to D. First find the X_i
+   * that are near the edge CD, then discard the ones such that {@code AX_i <= AC} or {@code AX_i >= AD}
    * (since these points have either already been considered or aren't relevant yet). Now X_i is to
    * the left of the polyline if and only if S2Predicates.orderedCCW(A, D, X_i, C) (in other words,
-   * if X_i is to the left of the angle wedge ACD). Note that simply testing
-   * S2Predicates.sign(C, D, X_i) or S2Predicates.sign(A, D, X_i) does not handle all cases
-   * correctly.
+   * if X_i is to the left of the angle wedge ACD). Note that simply testing S2Predicates.sign(C, D,
+   * X_i) or S2Predicates.sign(A, D, X_i) does not handle all cases correctly.
    *
    * <p>Returns true if the disc can be avoided given previous constraints, or if the discs to avoid
    * have not been processed yet. Returns false if the disc cannot be avoided.
@@ -369,6 +369,7 @@ public class S2PolylineSimplifier {
   private static class RangeToAvoid {
     /** Range of directions to avoid. */
     final S1Interval interval;
+
     /** Is this disc to the left of the output edge? */
     final boolean onLeft;
 

@@ -22,7 +22,6 @@ import static com.google.common.geometry.S2.M_PI_4;
 import static com.google.common.geometry.S2.area;
 import static com.google.common.geometry.S2.posToIJ;
 import static com.google.common.geometry.S2.posToOrientation;
-import static com.google.common.geometry.S2Projections.PROJ;
 import static java.lang.Math.asin;
 import static java.lang.Math.min;
 import static java.lang.Math.sqrt;
@@ -31,6 +30,7 @@ import com.google.common.collect.Ordering;
 import com.google.common.primitives.Doubles;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import java.io.Serializable;
+import java.util.Collection;
 import jsinterop.annotations.JsIgnore;
 import jsinterop.annotations.JsMethod;
 import jsinterop.annotations.JsType;
@@ -39,11 +39,57 @@ import jsinterop.annotations.JsType;
  * An S2Cell is an S2Region object that represents a cell. Unlike S2CellIds, it supports efficient
  * containment and intersection tests. However, it is also a more expensive representation.
  *
+ * <p>S2CellIds and S2Cells are defined by a 2D coordinate system on the six faces of the cube,
+ * (face,i,j) space. See {@link S2Projections} for details of the coordinate systems used in S2.
+ * Adjacent S2CellIds do not intersect, as the data model is half-open: a cell contains the area
+ * [iMin ... iMin+ijSize) x [jMin ... jMin+iJSize).
+ *
+ * <p>However, S2Cells are considered to be closed sets when determining containment of S2Points.
+ * So, an S2Point that is the projection of a (face,i,j) coordinate to (x,y,z) is contained by all
+ * the S2Cells having that (face,i,j) coordinate on their boundaries. This is achieved by expanding
+ * the bounds of the cell in (u,v) space in {@link S2Cell#contains(S2Point)}. Therefore, although
+ * adjacent S2Cells each contain the S2Points projected from vertices on their common boundary, the
+ * cells themselves do not intersect.
+ *
  * @author danieldanciu@google.com (Daniel Danciu) ported from util/geometry
  * @author ericv@google.com (Eric Veach) original author
  */
 @JsType
-public final strictfp class S2Cell implements S2Region, Serializable {
+@SuppressWarnings("Assertion")
+public final class S2Cell implements S2Region, Serializable {
+  /**
+   * Canonical identifiers for the boundaries of the cell. It's promised that both getVertex() and
+   * getBoundUV().getVertex() return vertices in this order.
+   *
+   * <pre>That is, for a given boundary k, the edge defining the boundary is:
+   *   ( getVertex(k), getVertex(k+1) )
+   * </pre>
+   *
+   * <p>The boundaries are defined in UV coordinates. The orientation may be rotated relative to
+   * other face cells, but are consistent within a face (i.e. a cell's left edge is its left-ward
+   * neighbor's right edge).
+   */
+  public enum Boundary {
+    BOTTOM_EDGE(0),
+    RIGHT_EDGE(1),
+    TOP_EDGE(2),
+    LEFT_EDGE(3);
+
+    public final int value;
+
+    private Boundary(int value) {
+      this.value = value;
+    }
+
+    /**
+     * Returns the Boundary with the given value. For convenience, the argument is reduced modulo 4
+     * to the range [0..3].
+     */
+    public static Boundary fromValue(int value) {
+      return values()[value & 3];
+    }
+  }
+
   byte face;
   byte level;
   byte orientation;
@@ -53,16 +99,45 @@ public final strictfp class S2Cell implements S2Region, Serializable {
   double vMin;
   double vMax;
 
+  /**
+   * The 4 cells around the equator extend to +/-45 degrees latitude at the midpoints of their top
+   * and bottom edges. The two cells covering the poles extend down to +/-35.26 degrees at their
+   * vertices. The maximum error in this calculation is 0.5 * DBL_EPSILON.
+   */
+  private static final double POLE_MIN_LAT = asin(sqrt(1. / 3)) - 0.5 * DBL_EPSILON;
+
   /** Default constructor used only internally. */
   S2Cell() {}
 
   /**
-   * An S2Cell always corresponds to a particular S2CellId. The other constructors are just
-   * convenience methods.
+   * An S2Cell always corresponds to a particular S2CellId, which must be valid: this is checked
+   * when assertions are enabled. The other constructors are just convenience methods.
    */
   @JsIgnore
   public S2Cell(S2CellId id) {
+    assert id.isValid() : "Invalid S2CellId: " + id.id();
     init(id);
+  }
+
+  /** Copy constructor. */
+  @JsIgnore
+  public S2Cell(S2Cell other) {
+    init(other.id());
+  }
+
+  /**
+   * Convenience constructor to construct a leaf S2Cell containing the given point. The point does
+   * not need to be normalized.
+   */
+  @JsIgnore
+  public S2Cell(S2Point p) {
+    init(S2CellId.fromPoint(p));
+  }
+
+  /** Convenience constructor to construct a leaf S2Cell containing the given lat,lng. */
+  @JsIgnore
+  public S2Cell(S2LatLng ll) {
+    init(S2CellId.fromLatLng(ll));
   }
 
   /** Returns the cell corresponding to the given S2 cube face. */
@@ -79,18 +154,6 @@ public final strictfp class S2Cell implements S2Region, Serializable {
    */
   public static S2Cell fromFacePosLevel(int face, long pos, int level) {
     return new S2Cell(S2CellId.fromFacePosLevel(face, pos, level));
-  }
-
-  /** Convenience method to construct a leaf S2Cell containing the given point. */
-  @JsIgnore
-  public S2Cell(S2Point p) {
-    init(S2CellId.fromPoint(p));
-  }
-
-  /** Convenience method to construct a leaf S2Cell containing the given lat,lng. */
-  @JsIgnore
-  public S2Cell(S2LatLng ll) {
-    init(S2CellId.fromLatLng(ll));
   }
 
   /** Returns the S2CellId of this cell. */
@@ -259,6 +322,48 @@ public final strictfp class S2Cell implements S2Region, Serializable {
   }
 
   /**
+   * Returns either U or V for the given boundary, whichever is constant along it. E.g. BOTTOM_EDGE
+   * and TOP_EDGE are constant in the V axis so we return those coordinates, but RIGHT_EDGE and
+   * LEFT_EDGE are constant in the U axis, so we return those coordinates.
+   */
+  public double getUVCoordOfBoundary(Boundary b) {
+    switch (b) {
+      case BOTTOM_EDGE:
+        return vMin;
+      case RIGHT_EDGE:
+        return uMax;
+      case TOP_EDGE:
+        return vMax;
+      case LEFT_EDGE:
+        return uMin;
+    }
+    throw new IllegalArgumentException("Invalid boundary: " + b);
+  }
+
+  /**
+   * Returns either I or J for the given boundary, whichever is constant along it.
+   *
+   * <p>E.g. BOTTOM_EDGE and TOP_EDGE are constant in the J axis so we return those coordinates, but
+   * RIGHT_EDGE and LEFT_EDGE are constant in the I axis, so we return those coordinates.
+   *
+   * <p>The returned value is not clamped to {@code S2Projections.LIMIT_IJ - 1} as in {@link
+   * S2Projections#stToIj(double)}, so that cell edges at the maximum extent of a face are properly
+   * returned as {@link S2Projections#LIMIT_IJ}.
+   */
+  public int getIJCoordOfBoundary(Boundary b) {
+    // We can just convert UV->ST->IJ for this because the IJ coordinates only have 30 bits of
+    // resolution in each axis. The error in the conversion will be a couple of epsilon which is
+    // <<< 2^-30, so if we use a proper round-to-nearest operation, we'll always round to the
+    // correct IJ value.
+    //
+    // Intel CPUs that support SSE4.1 have the ROUNDSD instruction, and ARM CPUs with VFP have the
+    // VCVT instruction, both of which can implement nearest rounding efficiently regardless of the
+    // current FPU rounding mode.
+    return (int)
+        Math.round(S2Projections.LIMIT_IJ * S2Projections.uvToST(getUVCoordOfBoundary(b)));
+  }
+
+  /**
    * Return the center of the cell in (u,v) coordinates (see {@code S2Projections}). Note that the
    * center of the cell is defined as the point at which it is recursively subdivided into four
    * children; in general, it is not at the midpoint of the (u,v) rectangle covered by the cell.
@@ -270,7 +375,7 @@ public final strictfp class S2Cell implements S2Region, Serializable {
   /** Return the average area in steradians for cells at the given level. */
   @JsMethod(name = "averageAreaAtLevel")
   public static double averageArea(int level) {
-    return PROJ.avgArea.getValue(level);
+    return S2Projections.AVG_AREA.getValue(level);
   }
 
   /**
@@ -323,21 +428,6 @@ public final strictfp class S2Cell implements S2Region, Serializable {
   // //////////////////////////////////////////////////////////////////////
   // S2Region interface (see {@code S2Region} for details):
 
-  // NOTE: This should be marked as @Override, but clone() isn't present in GWT's version of Object,
-  // so we can't mark it as such.
-  @SuppressWarnings("MissingOverride")
-  public S2Region clone() {
-    S2Cell clone = new S2Cell();
-    clone.face = this.face;
-    clone.level = this.level;
-    clone.orientation = this.orientation;
-    clone.uMin = this.uMin;
-    clone.uMax = this.uMax;
-    clone.vMin = this.vMin;
-    clone.vMax = this.vMax;
-    return clone;
-  }
-
   @Override
   public S2Cap getCapBound() {
     // Use the cell center in (u,v)-space as the cap axis. This vector is very close to GetCenter()
@@ -353,13 +443,6 @@ public final strictfp class S2Cell implements S2Region, Serializable {
     }
     return cap;
   }
-
-  /**
-   * The 4 cells around the equator extend to +/-45 degrees latitude at the midpoints of their top
-   * and bottom edges. The two cells covering the poles extend down to +/-35.26 degrees at their
-   * vertices. The maximum error in this calculation is 0.5 * DBL_EPSILON.
-   */
-  private static final double POLE_MIN_LAT = asin(sqrt(1. / 3)) - 0.5 * DBL_EPSILON;
 
   @Override
   public S2LatLngRect getRectBound() {
@@ -406,7 +489,7 @@ public final strictfp class S2Cell implements S2Region, Serializable {
     }
 
     // The face centers are the +X, +Y, +Z, -X, -Y, -Z axes in that order.
-    // assert (((face < 3) ? 1 : -1) == S2Projections.getNorm(face).get(face % 3));
+    assert ((face < 3) ? 1 : -1) == S2Projections.getNorm(face).get(face % 3);
 
     S2LatLngRect bound;
     switch (face) {
@@ -449,17 +532,27 @@ public final strictfp class S2Cell implements S2Region, Serializable {
   }
 
   @Override
+  public void getCellUnionBound(Collection<S2CellId> results) {
+    results.clear();
+    results.add(cellId);
+  }
+
+  @Override
   public boolean mayIntersect(S2Cell cell) {
     return cellId.intersects(cell.cellId);
   }
 
   /**
    * Returns true if the cell contains the given point "p". Note that unlike S2Loop/S2Polygon,
-   * S2Cells are considered to be closed sets. This means that points along an S2Cell edge (or at
-   * a vertex) belong to the adjacent cell(s) as well.
+   * S2Cells are considered to be closed sets for the purposes of S2Point containment. This means
+   * that points along an S2Cell edge (or at a vertex) belong to the adjacent cell(s) as well.
    *
    * <p>If instead you want every point to be contained by exactly one S2Cell, you will need to
-   * convert the S2Cells to S2Loops, which implement point containment this way.
+   * convert from S2CellIds to S2Loops, which implement point containment this way. Note that such
+   * loops must include every vertex they "logically" pass through that are used by other loops of
+   * the set. For example, if you have a cell at level N, surrounded by 12 neighbors at level N+1,
+   * the loop for the center cell will have 8 vertices. You can construct such a loop by using
+   * {@link S2CellId#toLoop(int)}, setting 'level' to the maximum level of any cell in the set.
    *
    * <p>The point "p" does not need to be normalized.
    */
@@ -500,6 +593,10 @@ public final strictfp class S2Cell implements S2Region, Serializable {
     return cellId.contains(cell.cellId);
   }
 
+  /**
+   * Returns the reduced (min or max) squared chord distance from {@code uvw} to the four vertices
+   * of this cell.
+   */
   @SuppressWarnings("AndroidJdkLibsChecker")
   private double vertexChordDist2(S2Point uvw, DoubleBinaryOperator reducer) {
     double d1 = chordDist2(uvw, uMin, vMin);
@@ -543,9 +640,9 @@ public final strictfp class S2Cell implements S2Region, Serializable {
 
   /**
    * Given the dot product of a point P with the normal of a u- or v-edge at the given coordinate
-   * value, returns the distance from P to that edge.
+   * value, returns the squared chord angle distance from P to that edge.
    */
-  private static double edgeDistance(double dirIJ, double uv) {
+  private static double edgeDistance2(double dirIJ, double uv) {
     // Let P be the target point and let R be the closest point on the given edge AB. The desired
     // distance XR can be expressed as PR^2 = PQ^2 + QR^2 where Q is the point P projected onto the
     // plane through the great circle through AB. We can compute the distance PQ^2 perpendicular to
@@ -566,17 +663,30 @@ public final strictfp class S2Cell implements S2Region, Serializable {
    */
   @JsMethod(name = "getDistanceToPoint")
   public S1ChordAngle getDistance(S2Point targetXyz) {
-    return S1ChordAngle.fromLength2(getDistanceInternal(targetXyz, true));
+    return S1ChordAngle.fromLength2(getDistance2Internal(targetXyz, true));
   }
 
-  /** Returns the distance to the given cell. Returns zero if one cell contains the other. */
+  /**
+   * Returns true if the given cell intersects or is adjacent to the given cell, and they are on the
+   * same face. Adjacent cells do not intersect, so we use the (u,v) ranges rather than
+   * S2CellId.intersects(), so as to include neighboring cells in this conditional. (Neighboring
+   * cells on different faces are not handled here.)
+   */
+  private boolean intersectOrAdjacentOnSameFace(S2Cell target) {
+    return face == target.face
+        && uMin <= target.uMax
+        && uMax >= target.uMin
+        && vMin <= target.vMax
+        && vMax >= target.vMin;
+  }
+
+  /**
+   * Returns the distance to the given cell. Returns zero if one cell contains the other, or the
+   * cells are adjacent.
+   */
   public S1ChordAngle getDistance(S2Cell target) {
-    // If the cells intersect, the distance is zero. We use the (u,v) ranges rather than
-    // S2CellId.intersects() so that cells that share a partial edge or a corner are considered to
-    // intersect.
-    if (face == target.face
-        && uMin <= target.uMax && uMax >= target.uMin
-        && vMin <= target.vMax && vMax >= target.vMin) {
+    // If the cells intersect or are adjacent, the distance is zero.
+    if (intersectOrAdjacentOnSameFace(target)) {
       return S1ChordAngle.ZERO;
     }
 
@@ -602,8 +712,57 @@ public final strictfp class S2Cell implements S2Region, Serializable {
     return minDist;
   }
 
-  /** Returns the chord distance to targetXyz, with interior distance 0 iff toInterior is true. */
-  private double getDistanceInternal(S2Point targetXyz, boolean toInterior) {
+  /**
+   * Returns true if the distance from this cell to the given cell is less than or equal to the
+   * given distance. When getMaxDistance(target) is less than the given distance, this can be about
+   * 16x faster than computing the actual distance with {@link #getDistance}, as it will stop after
+   * comparing a single pair of vertices. However, when the result is false, it is roughly the same
+   * speed.
+   */
+  @SuppressWarnings("ReferenceEquality")
+  public boolean isDistanceLessOrEqual(S2Cell target, S1ChordAngle distance) {
+    if (distance.isNegative()) {
+      return false;
+    }
+
+    // If the cells intersect or are adjacent, the distance is zero.
+    if (intersectOrAdjacentOnSameFace(target)) {
+      return true;
+    }
+
+    // Otherwise, the minimum distance always occurs between a vertex of one cell and an edge of the
+    // other cell (including the edge endpoints). This represents a total of 32 possible
+    // (vertex, edge) pairs.
+    //
+    // TODO(user): This could be optimized to be at least 5x faster by pruning the set of
+    // possible closest vertex/edge pairs using the faces and (u,v) ranges of both cells.
+    S2Point[] va = new S2Point[4];
+    S2Point[] vb = new S2Point[4];
+    for (int i = 0; i < 4; i++) {
+      va[i] = getVertex(i);
+      vb[i] = target.getVertex(i);
+    }
+
+    for (int i = 0; i < 4; i++) {
+      for (int j = 0; j < 4; j++) {
+        // Note the deliberate use of reference equality here. S1EdgeUtil.updateMinDistance returns
+        // the same S1ChordAngle instance if it is not updated.
+        if (distance != S2EdgeUtil.updateMinDistance(va[i], vb[j], vb[(j + 1) & 3], distance)) {
+          return true;
+        }
+        if (distance != S2EdgeUtil.updateMinDistance(vb[i], va[j], va[(j + 1) & 3], distance)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Returns the squared chord distance to targetXyz, with interior distance 0 iff toInterior is
+   * true.
+   */
+  private double getDistance2Internal(S2Point targetXyz, boolean toInterior) {
     // All calculations are done in the (u,v,w) coordinates of this cell's face.
     S2Point targetUvw = S2Projections.faceXyzToUvw(face, targetXyz);
 
@@ -618,25 +777,25 @@ public final strictfp class S2Cell implements S2Region, Serializable {
     if (dir00 < 0) {
       inside = false; // Target is to the left of the cell.
       if (vEdgeIsClosest(targetUvw, false)) {
-        return edgeDistance(-dir00, uMin);
+        return edgeDistance2(-dir00, uMin);
       }
     }
     if (dir01 > 0) {
       inside = false; // Target is to the right of the cell.
       if (vEdgeIsClosest(targetUvw, true)) {
-        return edgeDistance(dir01, uMax);
+        return edgeDistance2(dir01, uMax);
       }
     }
     if (dir10 < 0) {
       inside = false; // Target is below the cell.
       if (uEdgeIsClosest(targetUvw, false)) {
-        return edgeDistance(-dir10, vMin);
+        return edgeDistance2(-dir10, vMin);
       }
     }
     if (dir11 > 0) {
       inside = false; // Target is above the cell.
       if (uEdgeIsClosest(targetUvw, true)) {
-        return edgeDistance(dir11, vMax);
+        return edgeDistance2(dir11, vMax);
       }
     }
     if (inside) {
@@ -648,10 +807,10 @@ public final strictfp class S2Cell implements S2Region, Serializable {
       // quadrilaterals after they are projected onto the sphere. Therefore the simplest approach is
       // just to find the minimum distance to any of the four edges.
       return Doubles.min(
-          edgeDistance(-dir00, uMin),
-          edgeDistance(dir01, uMax),
-          edgeDistance(-dir10, vMin),
-          edgeDistance(dir11, vMax));
+          edgeDistance2(-dir00, uMin),
+          edgeDistance2(dir01, uMax),
+          edgeDistance2(-dir10, vMin),
+          edgeDistance2(dir11, vMax));
     }
 
     // Otherwise, the closest point is one of the four cell vertices. Note that it is *not* trivial
@@ -693,7 +852,12 @@ public final strictfp class S2Cell implements S2Region, Serializable {
     }
   }
 
-  /** Returns the maximum distance from the cell, including interior, to the given target cell. */
+  /**
+   * Returns the maximum distance from the cell, including interior, to the given target cell.
+   *
+   * <p>Note that the maximum distance from a cell to itself is the maximum distance between two
+   * corners of that cell.
+   */
   public S1ChordAngle getMaxDistance(S2Cell target) {
     // If the antipodal target intersects the cell, the distance is S1ChordAngle.STRAIGHT.
     // The antipodal UV is the transpose of the original UV, interpreted within the opposite face.
@@ -781,7 +945,7 @@ public final strictfp class S2Cell implements S2Region, Serializable {
 
   /** Returns the distance from the cell boundary to the given point. */
   public S1ChordAngle getBoundaryDistance(S2Point target) {
-    return S1ChordAngle.fromLength2(getDistanceInternal(target, false));
+    return S1ChordAngle.fromLength2(getDistance2Internal(target, false));
   }
 
   private void init(S2CellId id) {
@@ -794,10 +958,10 @@ public final strictfp class S2Cell implements S2Region, Serializable {
     int i = S2CellId.getI(ijo);
     int j = S2CellId.getJ(ijo);
     int cellSize = id.getSizeIJ();
-    this.uMin = S2Projections.PROJ.ijToUV(i, cellSize);
-    this.uMax = S2Projections.PROJ.ijToUV(i + cellSize, cellSize);
-    this.vMin = S2Projections.PROJ.ijToUV(j, cellSize);
-    this.vMax = S2Projections.PROJ.ijToUV(j + cellSize, cellSize);
+    this.uMin = S2Projections.ijToUV(i, cellSize);
+    this.uMax = S2Projections.ijToUV(i + cellSize, cellSize);
+    this.vMin = S2Projections.ijToUV(j, cellSize);
+    this.vMax = S2Projections.ijToUV(j + cellSize, cellSize);
   }
 
   private S2Point getPoint(int i, int j) {

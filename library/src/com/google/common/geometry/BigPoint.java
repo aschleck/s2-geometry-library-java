@@ -15,11 +15,11 @@
  */
 package com.google.common.geometry;
 
-import com.google.common.base.Objects;
 import java.math.BigDecimal;
+import java.util.Objects;
 
 /** A point consisting of BigDecimal coordinates. */
-final strictfp class BigPoint implements Comparable<BigPoint> {
+final class BigPoint implements Comparable<BigPoint> {
   final BigDecimal x;
   final BigDecimal y;
   final BigDecimal z;
@@ -34,6 +34,11 @@ final strictfp class BigPoint implements Comparable<BigPoint> {
     this.x = x;
     this.y = y;
     this.z = z;
+  }
+
+  /** Subtracts 'p' from this. */
+  public BigPoint sub(BigPoint p) {
+    return new BigPoint(x.subtract(p.x), y.subtract(p.y), z.subtract(p.z));
   }
 
   /** Returns the negative of this point. */
@@ -104,6 +109,6 @@ final strictfp class BigPoint implements Comparable<BigPoint> {
 
   @Override
   public int hashCode() {
-    return Objects.hashCode(x, y, z);
+    return Objects.hash(x, y, z);
   }
 }

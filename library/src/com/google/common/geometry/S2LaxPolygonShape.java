@@ -95,6 +95,8 @@ import java.util.List;
  *       bytes/vertex, but construction and especially operations are even slower and drive the
  *       garbage collector even harder.
  * </ol>
+ *
+ * <p>S2LaxPolygonShape implementations are expected to be immutable.
  */
 public interface S2LaxPolygonShape extends S2ShapeAspect.EdgeAspect.Closed {
   // When adding a new encoding, be aware that old binaries will not be able to decode it.
@@ -127,8 +129,9 @@ public interface S2LaxPolygonShape extends S2ShapeAspect.EdgeAspect.Closed {
     } else {
       // S2Polygon filters out empty loops already. Convert full loops to empty lists.
       // Other loops must simply be oriented.
-      return create(Lists.transform(polygon.getLoops(),
-          x -> x.isFull() ? ImmutableList.of() : x.orientedVertices()));
+      return create(
+          Lists.transform(
+              polygon.getLoops(), x -> x.isFull() ? ImmutableList.of() : x.orientedVertices()));
     }
   }
 
@@ -267,7 +270,7 @@ public interface S2LaxPolygonShape extends S2ShapeAspect.EdgeAspect.Closed {
 
   /** A simple polygon with points referenced from an array. */
   static class SimpleArray extends ChainAspect.Simple.Array implements S2LaxPolygonShape {
-    SimpleArray(Iterable<S2Point> vertices) {
+    private SimpleArray(Iterable<S2Point> vertices) {
       super(vertices);
     }
   }
@@ -307,7 +310,7 @@ public interface S2LaxPolygonShape extends S2ShapeAspect.EdgeAspect.Closed {
 
   /** A multi polygon with points referenced from an array. */
   static class MultiArray extends ChainAspect.Multi.Array implements S2LaxPolygonShape {
-    MultiArray(Iterable<? extends Iterable<S2Point>> loops) {
+    private MultiArray(Iterable<? extends Iterable<S2Point>> loops) {
       super(loops);
     }
   }
@@ -387,7 +390,7 @@ public interface S2LaxPolygonShape extends S2ShapeAspect.EdgeAspect.Closed {
                   "Expected encoding version %s, got %s.", CURRENT_ENCODING_VERSION, version));
         }
         // Bytes.readVarint64 throws IllegalArgumentException if the varint is malformed.
-        numChains = data.readVarint64(cursor);
+        numChains = Math.toIntExact(data.readVarint64(cursor));
       } catch (IndexOutOfBoundsException | IllegalArgumentException e) {
         throw new IOException("Insufficient or invalid input bytes: ", e);
       }
@@ -411,7 +414,8 @@ public interface S2LaxPolygonShape extends S2ShapeAspect.EdgeAspect.Closed {
       }
     }
 
-    @Override public boolean isLazy() {
+    @Override
+    public boolean isLazy() {
       return true;
     }
   }
