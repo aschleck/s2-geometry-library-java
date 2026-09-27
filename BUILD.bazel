@@ -1,5 +1,13 @@
 package(default_visibility = ["//visibility:public"])
 
+exports_files(["LICENSE"])
+
+# The sources whose javadoc //js:npm_package copies into its TypeScript declarations
+filegroup(
+    name = "geometry_srcs",
+    srcs = glob(["library/src/com/google/common/geometry/*.java"]),
+)
+
 load("@j2cl//build_defs:rules.bzl", "j2cl_library")
 load("@rules_java//java:java_library.bzl", "java_library")
 

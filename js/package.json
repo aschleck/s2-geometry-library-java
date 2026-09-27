@@ -1,0 +1,34 @@
+{
+  "name": "@aschleck/s2-geometry-java",
+  "version": "0.1.0",
+  "description": "Google's S2 Java geometry library compiled to JavaScript with J2CL",
+  "keywords": [
+    "s2",
+    "s2-geometry",
+    "geometry",
+    "geospatial",
+    "spherical",
+    "j2cl"
+  ],
+  "license": "Apache-2.0",
+  "author": "April Schleck",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aschleck/s2-geometry-library-java.git",
+    "directory": "js"
+  },
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    }
+  },
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "sideEffects": false,
+  "files": [
+    "index.js",
+    "index.d.ts"
+  ]
+}

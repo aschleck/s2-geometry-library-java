@@ -1,0 +1,103 @@
+load("@j2cl//build_defs:rules.bzl", "j2cl_application")
+load("@rules_closure//closure:defs.bzl", "closure_js_library")
+load("@rules_python//python:py_binary.bzl", "py_binary")
+
+# The classes exports.js puts on $s2exports, which become the package's named exports. Keep this in
+# sync with exports.js and index.d.ts.
+EXPORTS = [
+    "ArrayList",
+    "Bytes",
+    "Long",
+    "R1Interval",
+    "S1Angle",
+    "S1ChordAngle",
+    "S1Interval",
+    "S2Cap",
+    "S2Cell",
+    "S2CellId",
+    "S2CellUnion",
+    "S2Earth",
+    "S2LatLng",
+    "S2LatLngRect",
+    "S2Loop",
+    "S2Point",
+    "S2Polygon",
+    "S2Polyline",
+    "S2RegionCoverer",
+]
+
+closure_js_library(
+    name = "npm_exports",
+    srcs = [
+        "exports.js",
+        "externs.js",
+    ],
+    deps = [
+        "//:s2-j2cl",
+        "@j2cl//:jre",
+    ],
+)
+
+# Closure writes to `this` rather than producing a module, so the wrapper runs it against the global
+# object (Node has no `self` to fall back on) and turns $s2exports into named ES module exports.
+j2cl_application(
+    name = "s2_closure",
+    entry_points = ["s2.npm.exports"],
+    extra_production_args = [
+        "--compilation_level=ADVANCED",
+        "--language_in=ECMASCRIPT_2020",
+        "--language_out=ECMASCRIPT_2020",
+    ],
+    output_wrapper = "\n".join([
+        "const $s2exports = {};",
+        "(function() {%output%}).call(globalThis);",
+        "export const {%s} = $s2exports;" % ", ".join(EXPORTS),
+    ]),
+    deps = [
+        ":npm_exports",
+    ],
+)
+
+py_binary(
+    name = "dts_javadoc",
+    srcs = ["dts_javadoc.py"],
+)
+
+# index.d.ts with the Java library's javadoc, in the order the Java source declares things
+genrule(
+    name = "index_dts",
+    srcs = [
+        "index.d.ts",
+        "//:geometry_srcs",
+    ],
+    outs = ["documented/index.d.ts"],
+    cmd = "$(location :dts_javadoc) $(location index.d.ts) $@ $(locations //:geometry_srcs)",
+    tools = [":dts_javadoc"],
+)
+
+# The directory to run `npm publish` from.
+genrule(
+    name = "npm_package",
+    srcs = [
+        ":index_dts",
+        ":s2_closure.js",
+        "package.json",
+        "README.md",
+        "//:LICENSE",
+    ],
+    outs = [
+        "npm_package/LICENSE",
+        "npm_package/README.md",
+        "npm_package/index.d.ts",
+        "npm_package/index.js",
+        "npm_package/package.json",
+    ],
+    cmd = """
+        out=$(RULEDIR)/npm_package
+        cp $(location :s2_closure.js) $$out/index.js
+        cp $(location :index_dts) $$out/index.d.ts
+        cp $(location package.json) $$out/package.json
+        cp $(location README.md) $$out/README.md
+        cp $(location //:LICENSE) $$out/LICENSE
+    """,
+)
