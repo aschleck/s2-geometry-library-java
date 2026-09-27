@@ -1,0 +1,25 @@
+{
+  "name": "s2-geometry-java-examples",
+  "private": true,
+  "type": "module",
+  "description": "Examples of using @aschleck/s2-geometry-java",
+  "scripts": {
+    "cells": "node cells.ts",
+    "covering": "node covering.ts",
+    "polygons": "node polygons.ts",
+    "trails": "node trails.ts",
+    "encoding": "node encoding.ts",
+    "all": "npm run cells && npm run covering && npm run polygons && npm run trails && npm run encoding",
+    "typecheck": "tsc"
+  },
+  "dependencies": {
+    "@aschleck/s2-geometry-java": "^0.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.0"
+  },
+  "engines": {
+    "node": ">=22.18"
+  }
+}
